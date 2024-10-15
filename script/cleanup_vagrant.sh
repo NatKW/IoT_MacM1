@@ -1,19 +1,7 @@
 #!/bin/bash
 
-# Parcourir tous les dossiers du répertoire IoT : 
-#for VAGRANT_PROJECT_DIR in /Users/thnab/Code/IoT/p*/; do
+VAGRANT_PROJECT_DIR="/Users/thnab/Code/IoT_MACM1/p1"
 
-# Ou ne parcourir qu'un seul dossier du répertoire IoT :
-VAGRANT_PROJECT_DIR="/Users/thnab/Code/IoT/p1"
-
-# Vérifier si le répertoire existe
-if [ ! -d "$VAGRANT_PROJECT_DIR" ]; then
-  echo "Le répertoire $VAGRANT_PROJECT_DIR n'existe pas."
-  exit 1
-fi
-#done              # --> A rajouter pour la boucle 'for'
-
-# Se déplacer vers le répertoire du projet
 cd "$VAGRANT_PROJECT_DIR" || exit
 
 # Détruire les VM actives gérées par Vagrant
@@ -35,20 +23,7 @@ else
   echo "Aucun fichier de configuration Vagrant à supprimer."
 fi
 
-# Supprimer les réseaux QEMU/KVM
-if command -v virsh &> /dev/null; then
-  NETWORKS=$(virsh net-list --all | awk 'NR>2 {print $1}')
-  if [ -n "$NETWORKS" ]; then
-    for net in $NETWORKS; do
-      virsh net-destroy "$net"
-      virsh net-undefine "$net"
-    done
-  else
-    echo "Aucun réseau QEMU/KVM à supprimer."
-  fi
-fi
-
-# Supprimer les VM QEMU/KVM
+# Supprimer les VM QEMU
 if command -v virsh &> /dev/null; then
   VMS=$(virsh list --all | awk 'NR>2 {print $2}')
   if [ -n "$VMS" ]; then
@@ -57,7 +32,7 @@ if command -v virsh &> /dev/null; then
       virsh undefine "$vm"
     done
   else
-    echo "Aucune VM QEMU/KVM à supprimer."
+    echo "Aucune VM QEMU à supprimer."
   fi
 fi
 
@@ -68,23 +43,23 @@ else
   echo "Aucun fichier temporaire Vagrant à supprimer."
 fi
 
-# List of ports to check
+# Lister les ports à vérifier:
 PORTS=(50022 50024 50025)
 
-# Loop through each port
+# pour chacun des ports:
 for PORT in "${PORTS[@]}"; do
-  # Find the PID of the process listening on the specified port
+  # Trouver le PID de chq process qui rattaché au port ouvert :
   PID=$(lsof -ti :$PORT)
 
-  # Check if a PID was found for the port
+  # Trouver si un PID matchvagrant ssh pour un port : 
   if [ -n "$PID" ]; then
     echo "Found process listening on port $PORT with PID: $PID"
     
-    # Kill the process
+    # Kill les process
     kill -9 $PID
     echo "Process $PID on port $PORT killed."
     
-    # Check if the process was successfully killed
+    # Vérifier si les process ont bien été stoppés:
     if ! ps -p $PID > /dev/null; then
       echo "Process $PID on port $PORT successfully terminated."
     else

@@ -15,27 +15,61 @@ Vagrant.configure("2") do |config|
     # Common provisioning script
     common = <<-SHELL
       sudo apt update -qq 2>&1 >/dev/null
-      sudo apt install -y -qq git vim tree net-tools telnet git python3-pip apache2 sshpass nfs-common 2>&1 >/dev/null
+      sudo apt install -y -qq git vim tree net-tools telnet git python3-pip sshpass nfs-common 2>&1 >/dev/null
       echo "autocmd filetype yaml setlocal ai ts=2 sw=2 et" | sudo tee /home/vagrant/.vimrc
       sudo sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config
       sudo systemctl restart sshd
-      mkdir -p /opt/homebrew/var/run
-      sudo /opt/homebrew/opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.1 /opt/homebrew/var/run/socket_vmnet
     SHELL
+
+    # Provisioning block to configure sudoers for socket_vmnet
+  config.vm.provision "shell", inline: <<-SHELL
+  # Create the sudoers file for socket_vmnet
+  echo '%staff ALL=(root:root) NOPASSWD:NOSETENV: /opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.110 /var/run/socket_vmnet' | sudo tee /etc/sudoers.d/socket_vmnet
+  
+  # Set correct permissions on the sudoers file
+  sudo chmod 440 /etc/sudoers.d/socket_vmnet
+
+  # Verify sudoers configuration
+  sudo visudo -cf /etc/sudoers.d/socket_vmnet
+SHELL
+end
   
     # Provisioning master node
     config.vm.define "nade-la-S" do |master|
       master.vm.hostname = "nade-la-S"
-      master.vm.network "private_network", type: "dhcp", ip: "192.168.42.110"
       master.vm.provider "qemu" do |qe|
         qe.ssh_port = "50024"
     
       end
   
       master.vm.provision "shell", inline: <<-SHELL
+        # Modifier sudoers for socket_vmnet
+        echo '%staff ALL=(root:root) NOPASSWD:NOSETENV: /opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.110 /var/run/socket_vmnet' | sudo tee /etc/sudoers.d/socket_vmnet
+        sudo chmod 440 /etc/sudoers.d/socket_vmnet
+        sudo visudo -cf /etc/sudoers.d/socket_vmnet
+      SHELL
+
+        # Installer Homebrew
         sudo apt-get update
-        sudo apt-get install -y sudo sshpass
-  
+        sudo apt-get install -y sudo apache2
+        sudo apt-get install -y build-essential curl file git
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Add Homebrew to PATH
+        echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/vagrant/.profile
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+      else
+        echo "Homebrew is already installed."
+      fi
+
+        # Make sure Homebrew is available in the current shell
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        # Installer socket_vmnet
+        brew install socket_vmnet
+
+        # Créer le répertoire et exécuter socket_vmnet
+        #mkdir -p ${HOMEBREW_PREFIX}/var/run
+        #sudo ${HOMEBREW_PREFIX}/opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.110 ${HOMEBREW_PREFIX}/var/run/socket_vmnet
+      
         # Disable firewall
         sudo systemctl disable ufw --now
   
@@ -45,7 +79,7 @@ Vagrant.configure("2") do |config|
   
         # Copy K3s node token
         NODE_TOKEN="/var/lib/rancher/k3s/server/node-token"
-        sudo cp ${NODE_TOKEN} /vagrant/
+        sudo cp ${NODE_TOKEN} /
   
         # Add alias for kubectl
         echo "alias k='kubectl'" | sudo tee /etc/profile.d/00-aliases.sh
@@ -61,17 +95,35 @@ Vagrant.configure("2") do |config|
     # Provisioning worker node
     config.vm.define "nade-la-SW" do |worker|
       worker.vm.hostname = "nade-la-SW"
-      worker.vm.network "private_network",type: "dhcp", ip: "192.168.42.111"
       worker.vm.provider "qemu" do |qe|
         qe.ssh_port = "50025"
       end    
   
       worker.vm.provision "shell", inline: <<-SHELL
+        # Modifier sudoers for socket_vmnet
+        echo '%staff ALL=(root:root) NOPASSWD:NOSETENV: /opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.111 /var/run/socket_vmnet' | sudo tee /etc/sudoers.d/socket_vmnet
+        sudo chmod 440 /etc/sudoers.d/socket_vmnet
+        sudo visudo -cf /etc/sudoers.d/socket_vmnet
+      SHELL
+
+        # Installer Homebrew
         sudo apt-get update
-        sudo apt-get install -y sshpass
+        sudo apt-get install -y sudo apache2
+        sudo apt-get install -y build-essential curl file git
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Ajouter Homebrew au PATH
+        echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/vagrant/.profile
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+        # Installer socket_vmnet
+        brew install socket_vmnet
+
+        # Créer le répertoire et exécuter socket_vmnet
+        mkdir -p ${HOMEBREW_PREFIX}/var/run
+        sudo ${HOMEBREW_PREFIX}/opt/socket_vmnet/bin/socket_vmnet --vmnet-gateway=192.168.42.111 ${HOMEBREW_PREFIX}/var/run/socket_vmnet
   
-        # Disable firewalld
-        sudo systemctl disable firewalld --now
+        # Disable firewall
+        sudo systemctl disable ufw --now
   
         # Join worker to K3s cluster
         export INSTALL_K3S_EXEC="--node-ip=192.168.42.111 --flannel-iface=eth1 --node-external-ip=192.168.42.111"
